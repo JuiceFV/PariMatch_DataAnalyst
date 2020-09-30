@@ -1,0 +1,513 @@
+\documentclass[12pt, a3paper]{article}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[left=25pt, right=25pt, bottom=33pt, top=33pt]{geometry}
+
+\usepackage[russian, english]{babel}
+\usepackage{booktabs} 
+\usepackage{amsmath}
+\usepackage{blindtext}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage[table]{xcolor}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage[normalem]{ulem}
+
+\newcommand{\stkout}[1]{\ifmmode\text{\sout{\ensuremath{#1}}}\else\sout{#1}\fi}
+
+
+\titleclass{\subsubsubsection}{straight}[\subsection]
+
+\newcounter{subsubsubsection}[subsubsection]
+\renewcommand\thesubsubsubsection{\thesubsubsection.\arabic{subsubsubsection}}
+\renewcommand\theparagraph{\thesubsubsubsection.\arabic{paragraph}} % optional; useful if paragraphs are to be numbered
+
+\titleformat{\subsubsubsection}
+  {\normalfont\normalsize\bfseries}{\thesubsubsubsection}{1em}{}
+\titlespacing*{\subsubsubsection}
+{0pt}{3.25ex plus 1ex minus .2ex}{1.5ex plus .2ex}
+
+\makeatletter
+\renewcommand\paragraph{\@startsection{paragraph}{5}{\z@}%
+  {3.25ex \@plus1ex \@minus.2ex}%
+  {-1em}%
+  {\normalfont\normalsize\bfseries}}
+\renewcommand\subparagraph{\@startsection{subparagraph}{6}{\parindent}%
+  {3.25ex \@plus1ex \@minus .2ex}%
+  {-1em}%
+  {\normalfont\normalsize\bfseries}}
+\def\toclevel@subsubsubsection{4}
+\def\toclevel@paragraph{5}
+\def\toclevel@paragraph{6}
+\def\l@subsubsubsection{\@dottedtocline{4}{7em}{4em}}
+\def\l@paragraph{\@dottedtocline{5}{10em}{5em}}
+\def\l@subparagraph{\@dottedtocline{6}{14em}{6em}}
+\makeatother
+
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{4}
+
+\hypersetup{
+	colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+
+\begin{document}
+
+\pagenumbering{arabic}
+
+\tableofcontents
+
+\newpage
+
+\section{Предисловие}
+
+Для теста я использовал PostgreSQL 12 и некоторые функции от туда.
+Если нужны файлы для создания БД, я их сгенерировал, они находятся в папке sql\_files.
+
+\section{Задача 1}
+
+\paragraph{Постановка задания:} \emph{вывести список клиентов с непрерывной историей за год, 
+средний чек за период, средняя сумма покупок за месяц, количество всех операций по клиенту за период}
+\\[0.1cm]
+\noindent
+Я хочу уточнить, как именно я понял задание: 
+\begin{itemize}
+    \item Как я понял, требуется получить средний чек за период и средняя 
+    сумма покупок для каждого клиента (НЕ в целом для всей базы). 
+    \item Как я понял "\textbf{Tenure}" это то, сколько клиент пользуется сервисом.
+    \item Меня немного сбила фраза: \emph{\textbf{средняя сумма покупок за месяц}}. 
+    Я так понял, в одном чеке может "проходить" несколько покупок (продуктов), и требуется
+    найти как раз среднюю суму для этих покупок.
+\end{itemize}
+\noindent
+В целом мой ответ выглядит как-то так:
+\begin{lstlisting}[language=SQL]
+SELECT Avg_per_check.Id_client, 
+       SUM(Avg_per_check.Avg_check)/12 AS Avg_product, 
+       COUNT (Avg_per_check.Id_client) AS Num_of_operations, 
+       SUM(Total_per_check)/COUNT (Avg_per_check.Id_client) AS Avg_check
+FROM Transaction_info
+INNER JOIN
+(
+  SELECT Transaction_info.Id_client, 
+         Transaction_info.Id_check, 
+         AVG (Sum_payment) AS Avg_check, 
+         SUM (Sum_payment) AS Total_per_check 
+  FROM  Transaction_info 
+  INNER JOIN Customer_info
+  ON Customer_info.Id_client = Transaction_info.Id_client WHERE Tenure = 12
+  GROUP BY Transaction_info.Id_client, Transaction_info.Id_check
+) AS Avg_per_check
+ON Avg_per_check.Id_check = Transaction_info.Id_check
+GROUP BY Avg_per_check.Id_client;
+\end{lstlisting}
+
+\paragraph{Краткое пояснение}
+\leavevmode \\
+"Внутренний" подзапрос возвращает ID клиентов (id\_client) и соответствующие чеки (id\_check).
+Для каждого чека возвращается средняя сумма продукта на каждый чек (avg\_check) и общая сумма чека (total\_per\_check).
+Вывод будет выглядеть как-то так:
+\begin{table}[!h]
+    \begin{tabular}{|c|c|c|c|}
+    \hline
+    id\_client & id\_check & avg\_check         & total\_per\_check \\ \hline
+    33297      & 1747883   & 68.72000122070312  & 68.72             \\ \hline
+    33297      & 1933285   & 7.213846188325149  & 93.78001          \\ \hline
+    114389     & 2342999   & 9.298571263040815  & 65.090004         \\ \hline
+    114395     & 1705969   & 10.885454524647106 & 119.74            \\ \hline
+    114395     & 1711496   & 7.460666577021281  & 111.909996        \\ \hline
+    166395     & 2148933   & 3.0159999996423723 & 60.319996         \\ \hline
+    ...        & ...       & ...                & ...               \\ \hline
+    \end{tabular}
+\end{table}\\
+\noindent
+"Внешний" запрос собирает всё в одно. Для каждого клиента (id\_client)
+\begin{itemize}
+    \item Средняя сумма покупок за месяц (Avg\_product). Я сложил средние суммы продуктов за чек 
+    для каждого клиента и поделил на 12. (Т.к. во внутреннем запросе изначально определили,
+    что пользователи непрерывно пользовались сервисом 12 месяцев).
+    \item Кол-во операций (Num\_of\_operations) (я за 1 операцию взял один отдельный чек).
+    Кол-во операций равно кол-ву встречаемых одинаковых id\_client в вышеприведённой таблице (в результате "внутреннего" запроса).
+    \item Средний чек (Avg\_check) - это сумма всех чеков делённая на их кол-во. (Для одного клиента)
+\end{itemize}
+
+\begin{table}[!h]
+    \begin{tabular}{|c|c|c|c|}
+    \hline
+    id\_client & avg\_product       & num\_of\_operations & avg\_check         \\ \hline
+    33297      & 33.714999953905725 & 40                  & 114.46502685546875 \\ \hline
+    114389     & 5.424166570107142  & 7                   & 65.09000069754464  \\ \hline
+    ...        & ...                & ...                 & ...                \\ \hline
+    \end{tabular}
+\end{table}
+\newpage
+\section{Задача 2}
+
+Это задание я решил разделить на два запроса. Т.к. в первой части 
+("\emph{- вывести  помесячную информацию: средняя сумма чека в месяц, среднее количество 
+операций в месяц, среднее количество клиентов, которые совершали операции;}"), как я понял "\textbf{помесячная}" это именно
+распределение по месяцам как таковым, т.е. если в таблице есть три Декабря 
+(01/12/2020; 01/12/2021; 01/12/2022), тогда они считаются, как один (Декабрь). И тем 
+самым средняя для Декабря это {\LARGE $\frac{\sum {\text{Sum\_payments\_per\_all\_Decs}}}{3}$}.
+В Transaction\_info такой месяц - это Июнь. Просто, в инном случае
+я не понял задание, типо надо найти общее среднее? Я предположил, что нужно найти среднее
+для одинаковых месяцев. Ниже мой ответ и краткие пояснения.
+
+\begin{lstlisting}[language=SQL]
+SELECT EXTRACT(MONTH FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) AS Month_index, 
+       (SUM (Sum_payment)/COUNT (DISTINCT (Id_check)))/Months_count.quantity AS Avg_check_per_month,
+       COUNT (DISTINCT (Id_check))/Months_count.quantity AS Avg_operations_per_month,
+       COUNT (DISTINCT (Id_client))/Months_count.quantity AS Avg_clients_per_month
+FROM Transaction_info
+LEFT JOIN
+(
+ SELECT month_num, COUNT (month_num) AS quantity FROM
+ (
+     SELECT date_new, 
+            EXTRACT(MONTH FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) AS month_num 
+     FROM Transaction_info 
+     WHERE TO_TIMESTAMP(date_new, 'DD/MM/YYYY') >= 
+           (SELECT MIN(TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) FROM Transaction_info)
+     GROUP BY date_new,  
+              EXTRACT(YEAR FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')), 
+              EXTRACT(MONTH FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY'))
+ ) AS Months
+ GROUP BY month_num
+) AS Months_count 
+ON EXTRACT(MONTH FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = Months_count.month_num
+GROUP BY EXTRACT(MONTH FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')), 
+         Months_count.quantity;
+\end{lstlisting}
+
+\paragraph{Краткое пояснение}
+\leavevmode \\
+Для начала, я хочу быстренько объяснить почуму групировалось именно так:
+\begin{lstlisting}[language=SQL]
+EXTRACT(MONTH FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY'))
+\end{lstlisting}
+а не использовалось DISTINCT(date\_new). Если в БД, в отличие от Transaction\_info
+будет не только 1-ое число, тогда разделение будет не помесячным. \\
+Далее, чтобы посчитать помесячное расспределение - мне нужно кол-во 
+одинаковых месяцев. Данный подзапрос именно это и выполняет
+\begin{lstlisting}[language=SQL]
+SELECT month_num, COUNT (month_num) AS quantity FROM
+ (
+     SELECT date_new, 
+            EXTRACT(MONTH FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) AS month_num 
+     FROM Transaction_info 
+     WHERE TO_TIMESTAMP(date_new, 'DD/MM/YYYY') >= 
+           (SELECT MIN(TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) FROM Transaction_info)
+     GROUP BY date_new,  
+              EXTRACT(YEAR FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')), 
+              EXTRACT(MONTH FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY'))
+ ) AS Months
+ GROUP BY month_num
+\end{lstlisting}
+\noindent
+В результате получаем, например, такую таблицу.
+\begin{table}[!h]
+    \begin{tabular}{|c|c|}
+    \hline
+    month\_num & quantity \\ \hline
+    1          & 1        \\ \hline
+    2          & 1        \\ \hline
+    3          & 1        \\ \hline
+    4          & 1        \\ \hline
+    5          & 1        \\ \hline
+    6          & 2        \\ \hline
+    7          & 1        \\ \hline
+    8          & 1        \\ \hline
+    9          & 1        \\ \hline
+    10         & 1        \\ \hline
+    11         & 1        \\ \hline
+    12         & 1        \\ \hline
+    \end{tabular}
+\end{table}\\
+Ну и в основном запросе - собираем всё вместе:
+\begin{itemize}
+    \item Month\_index индекс месяца
+    \item Avg\_check\_per\_month средний чек за месяц 
+    {\LARGE ($\frac{\frac{\text{Сумма всех продуктов}}{\text{Кол-во отдельных чеков}}}{\text{Кол-во встречаемых месяцев}}$)}
+    \item Avg\_operations\_per\_month среднее кол-во операций за месяц {\LARGE ($\frac{\text{Кол-во отдельных чеков}}{\text{Кол-во встречаемых месяцев}}$)}
+    \item Avg\_clients\_per\_month среднее кол-во клиентов в месяц {\LARGE ($\frac{\text{Кол-во отдельных клиентов}}{\text{Кол-во встречаемых месяцев}}$)}
+\end{itemize}
+
+\begin{table}[!h]
+    \begin{tabular}{|c|c|c|c|}
+    \hline
+    month\_index & avg\_check\_per\_month & avg\_operations\_per\_month & avg\_clients\_per\_month \\ \hline
+    1            & 90.17771133682831      & 3052                        & 991                      \\ \hline
+    2            & 103.06605159154027     & 4681                        & 1254                     \\ \hline
+    3            & 95.85233378106112      & 4467                        & 1181                     \\ \hline
+    4            & 96.07434703904836      & 3867                        & 1089                     \\ \hline
+    5            & 94.94354003681546      & 4346                        & 1179                     \\ \hline
+    6            & 48.06021285679434      & 2049                        & 605                      \\ \hline
+    7            & 93.84781495390918      & 2929                        & 939                      \\ \hline
+    8            & 91.48030769566736      & 2862                        & 907                      \\ \hline
+    9            & 93.24462016821761      & 2794                        & 901                      \\ \hline
+    10           & 94.19579146798365      & 2936                        & 967                      \\ \hline
+    11           & 90.30309927523264      & 2794                        & 918                      \\ \hline
+    12           & 91.63934573112456      & 3139                        & 1032                     \\ \hline
+    \end{tabular}
+\end{table}
+\newpage
+\noindent
+Вторая часть задания выглядит так: 
+\emph{долю от общего количества операций за год и долю в месяц от общей суммы операций; 
+вывести \% соотношение M/F/NA в каждом месяце с их долей затрат}, а вот здесь, как
+я понял требуется вывести соотношение для каждого месяца, т.е. 06/2015 и 06/2016
+не является одним и тем же. Иначе задание тоже теряет смысл (для меня), т.к. не требуется вывести среднее по месяцу.
+
+\begin{lstlisting}[language=SQL]
+    WITH total_amount AS (
+        SELECT COUNT( DISTINCT(Id_check)) AS Operations,
+                SUM(Sum_payment) AS Expenditure
+        FROM Transaction_info
+     )
+    
+     SELECT Transaction_info.date_new, 
+            (COUNT( DISTINCT(Id_check))::REAL/(SELECT Operations FROM total_amount)*100)::NUMERIC(7,2) AS Operations_ratio,
+            (SUM (Sum_payment)::REAL/(SELECT Expenditure FROM total_amount)*100)::NUMERIC(7,2) AS expenditure_ratio,
+            (Genders_grouped.M::REAL/COUNT(DISTINCT(Id_client))*100)::NUMERIC(7,2) AS M_ratio,
+            (Genders_grouped.F::REAL/COUNT(DISTINCT(Id_client))*100)::NUMERIC(7,2) AS F_ratio,
+            (Genders_grouped.NaN::REAL/COUNT(DISTINCT(Id_client))*100)::NUMERIC(7,2) AS NaN_ratio,
+            (Genders_grouped.M_exp/SUM(Sum_payment)*100)::NUMERIC(7,2) AS M_exp_ratio,
+            (Genders_grouped.F_exp/SUM(Sum_payment)*100)::NUMERIC(7,2) AS F_exp_ratio,
+            (Genders_grouped.NaN_exp/SUM(Sum_payment)*100)::NUMERIC(7,2) AS NaN_exp_ratio
+     FROM Transaction_info
+     JOIN
+     (
+        SELECT date_new, 
+           SUM(M) AS M,
+           SUM(F) AS F,
+           SUM(NaN) AS NaN,
+           SUM(M_exp) AS M_exp,
+           SUM(F_exp) AS F_exp,
+           SUM(NaN_exp) AS NaN_exp
+           
+        FROM
+        (
+            SELECT  Transaction_info.Id_client,
+                    Transaction_info.date_new,
+                    (CASE WHEN gender = 'M' THEN 1 ELSE 0 END) AS M,
+                    (CASE WHEN gender = 'F' THEN 1 ELSE 0 END) AS F,
+                    (CASE WHEN COALESCE(gender, '') = '' THEN 1 ELSE 0 END) AS NaN,
+                    SUM(CASE WHEN gender = 'M' THEN Sum_payment ELSE 0 END) AS M_exp,
+                    SUM(CASE WHEN gender = 'F' THEN Sum_payment ELSE 0 END) AS F_exp,
+                    SUM(CASE WHEN COALESCE(gender, '') = '' THEN Sum_payment ELSE 0 END) AS NaN_exp
+            FROM Customer_info
+            JOIN Transaction_info
+            ON Customer_info.Id_client = Transaction_info.Id_client
+            GROUP BY Transaction_info.date_new,
+                    Transaction_info.Id_client,
+                    gender
+        ) Genders
+        GROUP BY date_new
+     ) AS Genders_grouped
+     ON Transaction_info.date_new = Genders_grouped.date_new
+     GROUP BY 
+        Transaction_info.date_new,
+        EXTRACT(YEAR FROM TO_TIMESTAMP(Transaction_info.date_new, 'DD/MM/YYYY')), 
+        EXTRACT(MONTH FROM TO_TIMESTAMP(Transaction_info.date_new, 'DD/MM/YYYY')),
+        Genders_grouped.M,
+        Genders_grouped.F,
+        Genders_grouped.NaN,
+        Genders_grouped.M_exp,
+        Genders_grouped.F_exp,
+        Genders_grouped.NaN_exp;
+\end{lstlisting}
+CTE WITH-AS возвращает таблицу с общим кол-вом операций и общей суммой выплат,
+(Operations и Expenditure соответственно).
+
+\noindent
+Далее я разобью на подзапросы, и чтобы не копировать их - буду писать глубину.
+
+\noindent
+1. Самый внутренний подзапрос, начинается так:
+\begin{lstlisting}[language=SQL]
+    SELECT  Transaction_info.Id_client,
+    ...
+\end{lstlisting}
+он возвращает для каждого клиента флаг его пола (1/0 - является/не является этим полом)
+и его затраты (идёт затраты под гендером), выглядит так:
+\begin{table}[h]
+    \begin{tabular}{|c|c|c|c|c|c|c|c|}
+        \hline
+        id\_client & date\_new  & m   & f   & nan & m\_exp    & f\_exp    & nan\_exp \\ \hline
+        16052      & 01/01/2016 & 0   & 1   & 0   & 0         & 39914.734 & 0        \\ \hline
+        112005     & 01/01/2016 & 1   & 0   & 0   & 524.99005 & 0         & 0        \\ \hline
+        ...        & ...        & ... & ... & ... & ...       & ...       & ...      \\ \hline
+    \end{tabular}
+\end{table}\\
+NaN детектится данной функцией \textbf{COUNT(CASE WHEN COALESCE(gender, '') = '' THEN 1 END)}.
+Она возращает первое НЕПУСТОЕ (not NULL) значение.
+
+\noindent
+2. Средний подзапрос
+\begin{lstlisting}[language=SQL]
+    SELECT date_new,
+    ...
+\end{lstlisting}
+Группирует всё по датам (Кол-во M/F/NA ОТДЕЛЬНЫХ т.е. если Id\_client = 126334 в одну дату встречается
+n раз, тогда они считаются за один, именно поэтому такая заморочка со внутреннем подзапросом).
+
+\begin{table}[!h]
+    \begin{tabular}{|c|c|c|c|c|c|c|}
+    \hline
+    date\_new  & m   & f   & nan & m\_exp     & f\_exp    & nan\_exp  \\ \hline
+    01/01/2016 & 303 & 661 & 27  & 73145.9    & 39914.734 & 7286.97   \\ \hline
+    01/02/2016 & 377 & 838 & 39  & 127577.734 & 341574.38 & 13294.879 \\ \hline
+    ...        & ... & ... & ... & ...        & ...       & ...       \\ \hline
+    01/12/2015 & 324 & 677 & 31  & 77881.14   & 202719.08 & 7055.7607 \\ \hline
+    \end{tabular}
+\end{table}
+
+\noindent
+Поделив помесячное значение на общее (для доли операций и общей суммы в год - я взял
+общую сумму соответсвующих значений в год, а для доли для M/F/NA - сумму соответсвующих значений в месяц) - я получил долю и такой вывод (всё в \%):
+
+\begin{table}[!h]
+    \begin{tabular}{|c|c|c|c|c|c|c|c|c|}
+    \hline
+    date\_new  & operations\_ratio & expenditure\_ratio & m\_ratio & f\_ratio & nan\_ratio & m\_exp\_ratio & f\_exp\_ratio & nan\_exp\_ratio \\ \hline
+    01/01/2016 & 7.27              & 6.92               & 30.58    & 66.70    & 2.72       & 26.58         & 70.78         & 2.65            \\ \hline
+    01/02/2016 & 11.15             & 12.13              & 30.06    & 66.83    & 3.11       & 26.44         & 70.80         & 2.76            \\ \hline
+    ...        & ...               & ...                & ...      & ...      & ...        & ...           & ...           & ...             \\ \hline
+    01/12/2016 & 7.48              & 7.23               & 31.40    & 65.60    & 3.00       & 27.07         & 70.47         & 2.45            \\ \hline
+    \end{tabular}
+\end{table}
+
+\noindent
+Далее я проверил m\_ratio + f\_ratio + nan\_ratio, вроде везде сходится к 100. (С expenditure тоже самое).
+Для годовых долей я прверял не доли а значения (суммы равны общей).
+
+\section{Задача 3}
+\paragraph{Постановка задания:} \emph{вВывести возрастные группы клиентов с шагом 10 лет и отдельно клиентов у которых нет данной информации с параметрами сумма и количество операций за весь период, и поквартально, средние показатели и \%.}
+\\[0.1cm]. 
+
+\noindent
+Я хочу подметить, что запрос не закончен для долей 2-4 квартала, т.к. я уже не вижу вывод
+Но они делаются по анологии с Q1.
+
+\noindent
+\includegraphics[width=1\textwidth]{scanty_img.png}
+Продолжение на след. странице
+\newpage
+В целом мой ответ выглядит так:
+\begin{lstlisting}[language=SQL]
+WITH total_amount AS (
+    SELECT COUNT( DISTINCT(Id_check)) AS Operations,
+           SUM(Sum_payment) AS Expenditure,
+           COUNT (DISTINCT(Customer_info.Id_client)) AS Customers
+    FROM Transaction_info
+    INNER JOIN Customer_info
+    ON Transaction_info.Id_client = Customer_info.Id_client
+)
+
+SELECT CASE
+		WHEN COALESCE(Age_groups.group, '') = '' THEN 'NaN' 
+        ELSE Age_groups.group
+        END AS Age_group,
+        SUM(Sum_payment) AS Total_Expenditures,
+        COUNT (DISTINCT (Id_check)) AS Total_Num_operations,
+		SUM (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 1 THEN Sum_payment END) AS Q1_exp,
+		SUM (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 2 THEN Sum_payment END) AS Q2_exp,
+		SUM (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 3 THEN Sum_payment END) AS Q3_exp,
+		SUM (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 4 THEN Sum_payment END) AS Q4_exp,
+		COUNT (DISTINCT (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 1 THEN Id_check END)) AS Q1_op,
+		COUNT (DISTINCT (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 2 THEN Id_check END)) AS Q2_op,
+		COUNT (DISTINCT (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 3 THEN Id_check END)) AS Q3_op,
+		COUNT (DISTINCT (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 4 THEN Id_check END)) AS Q4_op,
+		SUM (Sum_payment)/COUNT ( DISTINCT(Transaction_info.Id_client)) AS Avg_total_Exp,
+		COUNT (DISTINCT (Id_check))::REAL/COUNT ( DISTINCT(Transaction_info.Id_client)) AS Avg_total_op,
+		SUM (Sum_payment)/(SELECT Expenditure FROM total_amount)*100 AS Exp_ratio,
+		COUNT (DISTINCT (Id_check))::REAL/(SELECT COUNT (DISTINCT (Id_check)) FROM Transaction_info)*100 AS Op_ratio,
+		SUM (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 1 THEN Sum_payment END)/COUNT ( DISTINCT(CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 1 THEN Transaction_info.Id_client END)) AS Q1_avg_exp,
+		COUNT (DISTINCT (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 1 THEN Id_check END))::REAL/COUNT ( DISTINCT(CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 1 THEN Transaction_info.Id_client END)) AS Q1_avg_op,
+		SUM (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 1 THEN Sum_payment END)/SUM (Sum_payment)*100 AS Q1_exp_ratio,
+		COUNT (DISTINCT (CASE WHEN EXTRACT(QUARTER FROM TO_TIMESTAMP(date_new, 'DD/MM/YYYY')) = 1 THEN Id_check END))::REAL/COUNT (DISTINCT (Id_check)) AS Q1_op_ratio
+FROM
+(
+    SELECT Id_client, 
+           Age, 
+           '(' || FLOOR( (age - 1) / 10 ) *10 || '-' || FLOOR( (age + 9) / 10 ) * 10 || ')' 
+    AS group FROM Customer_info
+) AS Age_groups
+INNER JOIN 
+Transaction_info
+ON Age_groups.Id_client = Transaction_info.Id_client
+GROUP BY Age_groups.group
+ORDER BY Age_groups.group;
+\end{lstlisting}
+
+\noindent
+Внутренний подзапрос выводит возраст и возрастную группу с шагом 10 лет:
+\begin{table}[!h]
+    \begin{tabular}{|c|c|c|}
+    \hline
+    id\_client & age & group   \\ \hline
+    16052      & 65  & (60-70) \\ \hline
+    ...        & ... & ...     \\ \hline
+    25659      & 44  & (40-50) \\ \hline
+    \end{tabular}
+\end{table}
+
+\noindent
+Далее соединяем  эту таблицу с Transaction\_info и выводим всё, что требуется. Все функции я 
+рассмотрел уже выше, не хочется повторяться.
+
+\noindent
+Результат выше на скриншоте или вот тут, но урезан:
+\begin{table}[!h]
+    \begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|}
+    \hline
+    age\_group & total\_expenditures & total\_num\_operations & q1\_exp   & q2\_exp   & q3\_exp & q4\_exp   & q1\_op & q2\_op & q3\_op & q4\_op \\ \hline
+    (0-10)     & 12047.8125          & 118                    & 4471.1987 & 2166.7302 & 1973.71 & 3436.1697 & 36     & 24     & 20     & 38     \\ \hline
+    ...        & ...                 & ...                    & ...       & ...       & ...     & ...       & ...    & ...    & ...    & ...    \\ \hline
+    \end{tabular}
+\end{table}
+
+\vdots
+
+\begin{table}[!h]
+    \begin{tabular}{|c|c|c|c|c|c|c|c|}
+        \hline
+        avg\_total\_exp    & avg\_total\_op     & exp\_ratio         & op\_ratio           & q1\_avg\_exp      & q1\_avg\_op & q1\_exp\_ratio    & q1\_op\_ratio      \\ \hline
+        1095.255 & 0.3028 & 0.3028 & 0.2811 & 558.8998 & 4.5         & 37.112 & 0.30508 \\ \hline
+        ...                & ...                & ...                & ...                 & ...               & ...         & ...               & ...                \\ \hline
+    \end{tabular}
+\end{table}
+\end{document}
